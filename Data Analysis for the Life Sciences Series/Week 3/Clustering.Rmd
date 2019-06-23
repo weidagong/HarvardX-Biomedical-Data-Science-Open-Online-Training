@@ -1,0 +1,40 @@
+---
+title: "Clustering"
+author: "Weida Gong"
+date: "June 16, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Clustering
+
+### Hierarchical clustering
+
+
+
+```{r cars}
+load('tissuesGeneExpression.rda')
+d <- dist(t(e))
+hclust_avg <- hclust(d, method = 'average')
+```
+
+
+```{r pressure, echo=FALSE}
+plot(hclust_avg, labels = tab$Tissue)
+```
+
+## K-means
+```{r}
+set.seed(1)
+km <- kmeans(t(e[1:2, ]), centers = 7)
+```
+
+```{r, echo = FALSE, fig.width=3}
+
+plot(e[1, ], e[2, ], col = as.numeric(as.factor(tab$Tissue)), pch = 16)
+plot(e[1, ], e[2, ], col = km$cluster, pch = 16)
+
+```
