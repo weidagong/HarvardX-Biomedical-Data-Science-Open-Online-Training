@@ -1,0 +1,77 @@
+---
+title: "Batch effect"
+author: "Weida Gong"
+date: "June 23, 2019"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Batch effect
+
+Load data
+
+```{r cars}
+library(qvalue)
+load("GSE5859Subset.rda")
+batch <- factor(format(sampleInfo$date, "%m"))
+sex <- sampleInfo$group
+chr <- geneAnnotation$CHR
+```
+
+### Model without batch, gene 7635 as an example
+
+```{r}
+X0 <- model.matrix(~sex)
+j <- 7635
+y <- geneExpression[j, ]
+fit <- lm(y~X0 - 1)
+summary(fit)$coef
+```
+
+### Model with batch
+
+```{r}
+X <- model.matrix(~sex+batch)
+fit <- lm(y~X-1)
+summary(fit)$coef
+```
+### Fit new model for all genes
+```{r}
+res <- sapply(1:nrow(geneExpression), function(i){
+  y <- geneExpression[i, ]
+  fit <- lm(y~X-1)
+  return(summary(fit)$coef[2, c(1,4)])
+})
+
+res <- t(res)
+res <- data.frame((res))
+names(res) <- c("dm", "pvalue")
+
+hist(res$pvalue[which(!chr %in% c("chrX", "chrY"))], main="", ylim = c(0, 1300), 
+     xlab = "pvalue")
+plot(res$dm, -log10(res$pvalue))
+points(res$dm[which(chr=="chrX")], -log10(res$pvalue[which(chr=="chrX")]),col=1,pch=16)
+points(res$dm[which(chr=="chrY")], -log10(res$pvalue[which(chr=="chrY")]),col=2,pch=16, 
+       xlab = "Effect size", ylab = "-log10 pvalue")
+legend("bottomright", c("chrX", "chrY"), col=1:2, pch=16)
+qvals <- qvalue(res$pvalue)$qvalue
+index <- which(qvals < 0.1)
+abline(h = -log10(max(res$pvalue[index])))
+
+```
+## Surrogate Variable Analysis
+
+```{r}
+library(limma)
+library(sva)
+mod <- model.matrix(~sex)
+svafit <- sva(geneExpression, mod)
+
+svaX <- model.matrix(~sex+svafit$sv)
+lmfit <- lmFit(geneExpression, svaX)
+```
