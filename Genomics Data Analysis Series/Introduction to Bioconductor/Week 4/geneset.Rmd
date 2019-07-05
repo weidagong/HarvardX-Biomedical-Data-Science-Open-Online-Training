@@ -1,0 +1,124 @@
+---
+title: "Gene Set Analysis"
+author: "Weida Gong"
+date: "June 27, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE}
+library(sva)
+library(limma)
+library(matrixStats)
+library(GSEABase)
+load("GSE5859Subset.rda")
+```
+
+Correct for batch effect
+
+```{r}
+X <- sampleInfo$group
+mod <- model.matrix(~X)
+svafit <- sva(geneExpression, mod)
+svaX <- model.matrix(~X+svafit$sv)
+lmfit <- lmFit(geneExpression, svaX)
+tt<-lmfit$coef[,2]*sqrt(lmfit$df.residual)/(2*lmfit$sigma)
+pval <- 2*(1-pt(abs(tt), lmfit$df.residual))
+qval <- p.adjust(pval)
+```
+
+
+
+```{r}
+gsets <- getGmt("c1.all.v6.1.entrez.gmt")
+
+mapGMT2Affy <- function(object,gsets){
+  ann<-annotation(object)
+  dbname<-paste(ann,"db",sep=".")
+  require(dbname,character.only=TRUE)
+  gns<-featureNames(object)
+
+  ##This call may generate warnings
+  map<-select(get(dbname), keys=gns,columns=c("ENTREZID", "PROBEID"))
+  map<-split(map[,1],map[,2])
+  indexes<-sapply(gsets,function(ids){
+    gns2<-unlist(map[geneIds(ids)])
+    match(gns2,gns)
+    })
+  names(indexes)<-names(gsets)
+  return(indexes)
+}
+
+rownames(sampleInfo) <- colnames(geneExpression)
+e <- ExpressionSet(assay = geneExpression,
+                   phenoData = AnnotatedDataFrame(sampleInfo),
+                   annotation = "hgfocus")
+
+gsids <- mapGMT2Affy(e, gsets)
+```
+
+### Association test (chi square)
+
+```{r}
+tab <- table(ingenset = 1:nrow(e) %in% gsids[["chryq11"]], signif = qval < 0.05)
+chisq.test(tab)$p.val
+```
+
+Only 13 genes are statistical significant. Therefore, this method is not practical for identifying other interesting gene sets
+
+## Summary statistics
+
+Wilcoxon Mann-Whitney test to compare the t stats among genesets
+
+```{r}
+ind <- gsids[['chrxp11']]
+plot(density(tt[-ind]), xlim = c(-7, 7), main = "", xlab = 't-stat', lwd = 4)
+lines(density(tt[ind]), col = 2, lty = 2, lwd = 4)
+legend("topleft", legend = c("present on xp11", "not on xp11"), col = c(2, 1), lty = c(2, 1))
+```
+```{r}
+es <- lmfit$coefficients[, 2]
+wilcox <- sapply(gsids, function(i){
+  if (length(i) > 2){
+    tmp <- wilcox.test(es[i], es[-i])
+    return(tmp$p.value)
+  }
+  else{
+    return(NA)
+  }
+})
+hist(wilcox)
+```
+
+Wilcox test is a rank-based test, which is very conservative
+
+Instead, we can simply compare the average t stats in each gene set
+```{r}
+avgt <- sapply(gsids, function(i){
+  sqrt(length(i))*mean(tt[i])
+})
+avgt[order(-abs(avgt))[1:10]]
+```
+
+
+## Permutation
+
+```{r}
+set.seed(1)
+B <- 400 # 400 times
+null <- sapply(1:B, function(i){
+  nullX <- sample(X)
+  nullsvaX <- model.matrix(~nullX + svafit$sv)
+  nulllmfit <- lmFit(geneExpression, nullsvaX)
+  nulltt<-nulllmfit$coef[,2]*sqrt(nulllmfit$df.residual)/(2*nulllmfit$sigma)
+  nullavgt <- sapply(gsids,function(i) sqrt(length(i))*mean(nulltt[i]))
+  return(nullavgt)
+})
+permpval <- rowMeans(abs(avgt) < abs(null))
+```
+
+
+
