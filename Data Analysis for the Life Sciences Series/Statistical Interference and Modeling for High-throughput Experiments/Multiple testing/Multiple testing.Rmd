@@ -1,0 +1,113 @@
+---
+title: "Multiple testing"
+author: "Weida Gong"
+date: "8/29/2019"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Multiple Testing
+
+A simulation dataset where null is true for all features
+
+```{r, results='hide'}
+set.seed(1)
+population <- unlist(read.csv("femaleControlsPopulation.csv", stringsAsFactors = F))
+alpha <- 0.05
+N <- 12
+m <- 10000
+
+pvals <- replicate(m, {
+  control <- sample(population, N)
+  treatment <- sample(population, N)
+  t.test(control, treatment)$p.value
+})
+
+```
+
+As we know no feature should be significantly different, However...
+
+```{r}
+sum(pvals < 0.05)
+
+```
+
+462 False positives. Type-I error
+
+Another dataset where 10% of the features are true positives, and the differences are 3
+
+```{r, results='hide'}
+alpha <- 0.05
+N <- 12
+m <- 10000
+p0 <- 0.9 #10% positive
+m0 <- m * p0
+m1 <- m - m0
+nullHypothesis <- c(rep(TRUE, m0), rep(FALSE, m1))
+delta <- 3
+
+set.seed(1)
+calls <- sapply(1:m, function(i){
+  control <- sample(population, N)
+  treatment <- sample(population, N)
+  if (!nullHypothesis[i]){
+    treatment <- treatment + delta
+  }
+  ifelse(t.test(treatment, control)$p.value < alpha,
+         "Called significant",
+         "Not called significant")
+})
+```
+
+See false positives (Null is True but called significant)
+And false negatives (Null is False but not called significant)
+
+```{r}
+null_hypothesis <- factor(nullHypothesis, levels = c("TRUE", "FALSE")) #Reorder
+table(null_hypothesis, calls)
+```
+
+Notice that false positives and false negatives are also random variables, and can change in different simulations
+
+```{r}
+B <- 10 #repeat 10 times
+
+FPandFN <- replicate(B, {
+  calls <- sapply(1:m, function(i){
+  control <- sample(population, N)
+  treatment <- sample(population, N)
+  if (!nullHypothesis[i]){
+    treatment <- treatment + delta
+  }
+  t.test(treatment, control)$p.value < alpha
+  })
+  cat("False positives = ", sum(nullHypothesis & calls), 
+      "False negatives = ", sum(!nullHypothesis & !calls), "\n")
+  c(sum(nullHypothesis & calls), sum(!nullHypothesis & !calls))
+})
+
+```
+## The Bonferroni Correction
+
+Too stringent, basically dividing alpha by number of samples
+In the example below, 10% of all the data are positives but only 2 are detected...
+High false negatives...
+
+```{r}
+set.seed(1)
+pvals <- sapply(1:m, function(i){
+  control <- sample(population, N)
+  treatment <- sample(population, N)
+  if(!nullHypothesis[i]) treatment <- treatment + delta
+  t.test(control, treatment)$p.value
+})
+
+sum(pvals < alpha/m)
+```
+
+## False Discovery Rate
