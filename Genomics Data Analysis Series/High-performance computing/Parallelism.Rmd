@@ -1,0 +1,75 @@
+---
+title: "Parellelism"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Simple example of Parellelism in R
+
+```{r}
+system.time(lapply(1:8, function(x){
+  Sys.sleep(1)
+}))
+
+```
+parallel package does not work on Windows system...
+See example Below
+```{r}
+library(parallel)
+detectCores()
+```
+
+```{r}
+options(mc.cores=4)
+system.time(mclapply(1:8, function(x){
+  Sys.sleep(1)
+}))
+```
+
+Use snow instead...
+
+```{r}
+library(snow)
+library(doParallel)
+cl <- makeCluster(4)
+registerDoParallel(cl)
+system.time(clusterApply(cl, 1:8, function(x){
+  Sys.sleep(1)
+}))
+stopCluster(cl)
+```
+
+## Implicit parallelism with BiocParallel
+
+Read counting example...
+
+```{r, results="hide"}
+library(RNAseqData.HNRNPC.bam.chr14)
+library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+library(GenomicAlignments)
+library(BiocParallel)
+```
+
+```{r}
+fns <- RNAseqData.HNRNPC.bam.chr14_BAMFILES
+txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
+seqlevels(txdb) <- "chr14"
+ebd <- exonsBy(txdb, by = "gene")
+register(SnowParam(workers = 1))
+system.time(i3 <- summarizeOverlaps(ebd, fns))
+```
+
+Slightly better?
+```{r}
+snow = SnowParam(workers = 3, type = "SOCK")
+system.time(bplapply(fns, function(x, ebd){
+  suppressPackageStartupMessages({
+    library(GenomicAlignments)
+  })
+  i3 <- summarizeOverlaps(ebd, x)
+}, BPPARAM = snow, ebd = ebd))
+```
+
